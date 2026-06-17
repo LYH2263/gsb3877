@@ -1,0 +1,13 @@
+node_modules
+.pnpm-store
+.DS_Store
+.env
+.env.*
+frontend/dist
+backend/dist
+backend/uploads
+*.tsbuildinfo
+
+# 题目与对话（本地辅助文件，不纳入版本库）
+题目.md
+对话/
