@@ -1,8 +1,8 @@
 import type { Post, PostMedia, User } from "@prisma/client";
 
-import { env } from "../config/env";
+import { mapMediaList, withMediaPrefix } from "./media-mapper";
 
-const MEDIA_PREFIX = env.MEDIA_PUBLIC_PREFIX;
+export { withMediaPrefix } from "./media-mapper";
 
 type PostAuthor = Pick<User, "id" | "nickname" | "avatarUrl" | "level">;
 type QuotedPost = Pick<Post, "id" | "content" | "source" | "createdAt"> & {
@@ -19,66 +19,61 @@ export interface PostWithRelations extends Post {
   followedByMe?: boolean;
 }
 
+/**
+ * 将作者信息映射为前端所需的作者格式。
+ * @param author - 原始作者信息
+ * @param isFollowed - 当前用户是否关注该作者
+ * @returns 格式化后的作者对象
+ */
+function mapAuthor(author: PostAuthor, isFollowed: boolean) {
+  return {
+    id: author.id,
+    nickname: author.nickname,
+    avatarUrl: withMediaPrefix(author.avatarUrl),
+    level: author.level,
+    isFollowed
+  };
+}
+
+/**
+ * 将被转发的帖子映射为前端所需的引用格式。
+ * @param repostOf - 原始被转发帖子
+ * @returns 格式化后的引用帖子对象，若输入为 null/undefined 则返回 null
+ */
+function mapQuotedPost(repostOf: QuotedPost | null | undefined) {
+  if (!repostOf) {
+    return null;
+  }
+
+  return {
+    id: repostOf.id,
+    author: {
+      id: repostOf.author.id,
+      nickname: repostOf.author.nickname,
+      avatarUrl: withMediaPrefix(repostOf.author.avatarUrl),
+      level: repostOf.author.level
+    },
+    content: repostOf.content,
+    source: repostOf.source,
+    createdAt: repostOf.createdAt,
+    media: mapMediaList(repostOf.media)
+  };
+}
+
 export function toFeedItem(post: PostWithRelations) {
   return {
     id: post.id,
-    author: {
-      id: post.author.id,
-      nickname: post.author.nickname,
-      avatarUrl: withMediaPrefix(post.author.avatarUrl),
-      level: post.author.level,
-      isFollowed: Boolean(post.followedByMe)
-    },
+    author: mapAuthor(post.author, Boolean(post.followedByMe)),
     content: post.content,
     source: post.source,
     createdAt: post.createdAt,
     channel: post.channel,
-    media: post.media
-      .slice()
-      .sort((a, b) => a.sortOrder - b.sortOrder)
-      .map((item) => ({
-        id: item.id,
-        type: item.type,
-        url: withMediaPrefix(item.url)
-      })),
+    media: mapMediaList(post.media),
     likesCount: post.likesCount,
     commentsCount: post.commentsCount,
     repostsCount: post.repostsCount,
     isLiked: Boolean(post.likedByMe),
     isReposted: Boolean(post.repostedByMe),
-    repostOf: post.repostOf
-      ? {
-          id: post.repostOf.id,
-          author: {
-            id: post.repostOf.author.id,
-            nickname: post.repostOf.author.nickname,
-            avatarUrl: withMediaPrefix(post.repostOf.author.avatarUrl),
-            level: post.repostOf.author.level
-          },
-          content: post.repostOf.content,
-          source: post.repostOf.source,
-          createdAt: post.repostOf.createdAt,
-          media: post.repostOf.media
-            .slice()
-            .sort((a, b) => a.sortOrder - b.sortOrder)
-            .map((item) => ({
-              id: item.id,
-              type: item.type,
-              url: withMediaPrefix(item.url)
-            }))
-        }
-      : null
+    repostOf: mapQuotedPost(post.repostOf)
   };
-}
-
-export function withMediaPrefix(url: string | null): string | null {
-  if (!url) {
-    return null;
-  }
-
-  if (url.startsWith("http://") || url.startsWith("https://")) {
-    return url;
-  }
-
-  return `${MEDIA_PREFIX}${url}`;
 }
