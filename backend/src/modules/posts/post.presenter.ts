@@ -23,6 +23,48 @@ export const FEED_POST_INCLUDE = {
 
 type MinimalPost = Prisma.PostGetPayload<{ include: typeof FEED_POST_INCLUDE }>;
 
+/**
+ * 批量查询当前用户对指定帖子的点赞记录
+ * @param postIds - 待查询的帖子 ID 列表
+ * @param userId - 当前用户 ID
+ * @returns 被当前用户点赞的帖子 ID 集合
+ */
+async function batchQueryLiked(postIds: number[], userId: number): Promise<Set<number>> {
+  const likes = await prisma.like.findMany({
+    where: { userId, postId: { in: postIds } },
+    select: { postId: true }
+  });
+  return new Set(likes.map((item) => item.postId));
+}
+
+/**
+ * 批量查询当前用户对指定帖子的转发记录
+ * @param postIds - 待查询的帖子 ID 列表
+ * @param userId - 当前用户 ID
+ * @returns 被当前用户转发的帖子 ID 集合
+ */
+async function batchQueryReposted(postIds: number[], userId: number): Promise<Set<number>> {
+  const reposts = await prisma.repost.findMany({
+    where: { userId, postId: { in: postIds } },
+    select: { postId: true }
+  });
+  return new Set(reposts.map((item) => item.postId));
+}
+
+/**
+ * 批量查询当前用户对指定用户的关注记录
+ * @param authorIds - 待查询的用户 ID 列表
+ * @param userId - 当前用户 ID
+ * @returns 被当前用户关注的用户 ID 集合
+ */
+async function batchQueryFollowed(authorIds: number[], userId: number): Promise<Set<number>> {
+  const follows = await prisma.follow.findMany({
+    where: { followerId: userId, followingId: { in: authorIds } },
+    select: { followingId: true }
+  });
+  return new Set(follows.map((item) => item.followingId));
+}
+
 export async function toFeedItems(posts: MinimalPost[], currentUserId?: number) {
   if (posts.length === 0) {
     return [];
@@ -35,33 +77,11 @@ export async function toFeedItems(posts: MinimalPost[], currentUserId?: number) 
   const postIds = posts.map((post) => post.id);
   const authorIds = Array.from(new Set(posts.map((post) => post.authorId)));
 
-  const [likes, reposts, follows] = await Promise.all([
-    prisma.like.findMany({
-      where: {
-        userId: currentUserId,
-        postId: { in: postIds }
-      },
-      select: { postId: true }
-    }),
-    prisma.repost.findMany({
-      where: {
-        userId: currentUserId,
-        postId: { in: postIds }
-      },
-      select: { postId: true }
-    }),
-    prisma.follow.findMany({
-      where: {
-        followerId: currentUserId,
-        followingId: { in: authorIds }
-      },
-      select: { followingId: true }
-    })
+  const [likedSet, repostSet, followSet] = await Promise.all([
+    batchQueryLiked(postIds, currentUserId),
+    batchQueryReposted(postIds, currentUserId),
+    batchQueryFollowed(authorIds, currentUserId)
   ]);
-
-  const likedSet = new Set(likes.map((item) => item.postId));
-  const repostSet = new Set(reposts.map((item) => item.postId));
-  const followSet = new Set(follows.map((item) => item.followingId));
 
   return posts.map((post) =>
     toFeedItem({
